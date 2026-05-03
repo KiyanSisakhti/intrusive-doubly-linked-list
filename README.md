@@ -1,0 +1,107 @@
+# intrusive-doubly-linked-list
+
+A high-performance, **zero-allocation**, circular intrusive doubly linked list for Rust.
+
+This crate is designed for **bare-metal (no_std)** environments where you need to manage collections of data without the overhead of a global heap allocator. By using an intrusive design, the "links" (pointers) are stored directly inside your data structures.
+
+## Features
+
+- **Zero Heap Allocation**: No `Box`, `Vec`, or `BTreeMap` required.
+- **Bare-Metal Ready**: Works in `no_std` environments using raw pointers (`NonNull`).
+- **O(1) Operations**: Push, pop, and remove operations are constant time.
+- **Circular Mechanics**: Simplifies rotation and ensures the list never has a "dead end."
+- **Safety Guard**: Includes a `link_state` flag to prevent a node from being corrupted by being added to two lists at once.
+
+## Installation
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+intrusive-doubly-list = "0.1.3"
+```
+
+## Step 1: Implement `DoublyLinkPointer`
+
+To put your data into the list, your struct must "volunteer" fields to store the pointers. This is what makes the list **intrusive**.
+
+```rust
+use intrusive-doubly-list::DoublyLinkPointer;
+use core::ptr::NonNull;
+
+struct SensorData {
+    // Intrusive links
+    next: Option<NonNull<SensorData>>,
+    last: Option<NonNull<SensorData>>,
+    linked: bool,
+    
+    // Your actual data
+    value: f32,
+}
+
+impl DoublyLinkPointer<SensorData> for SensorData {
+    fn get_next(&self) -> Option<NonNull<SensorData>> { self.next }
+    fn get_last(&self) -> Option<NonNull<SensorData>> { self.last }
+    fn set_next(&mut self, next: Option<NonNull<SensorData>>) { self.next = next; }
+    fn set_last(&mut self, last: Option<NonNull<SensorData>>) { self.last = last; }
+    fn set_link_state(&mut self, state: bool) { self.linked = state; }
+    fn is_linked(&self) -> bool { self.linked }
+}
+```
+
+## Step 2: Basic Usage
+
+In bare-metal environments, nodes often live in fixed buffers or static memory. To use them, you convert a safe mutable reference into a `NonNull<T>` pointer.
+
+```rust
+use intrusive-doubly-list::{IntrusiveDLinkList, DoublyLinkPointer};
+use core::ptr::NonNull;
+
+fn main() {
+    let mut list = IntrusiveDLinkList::new();
+
+    // 1. Create your data (e.g., on the stack)
+    // IMPORTANT: The node must not be moved after being added to the list.
+    let mut sensor_a = SensorData {
+        next: None,
+        last: None,
+        linked: false,
+        value: 22.5,
+    };
+
+    // 2. Convert a safe mutable reference to NonNull.
+    // This creates a pointer the list can use to link the node.
+    let node_ptr = NonNull::from(&mut sensor_a);
+
+    // 3. Initialize and push
+    IntrusiveDLinkList::init_node(node_ptr);
+    list.push(node_ptr);
+
+    // 4. Iterate safely
+    for node in list.iter() {
+        println!("Value: {}", node.value);
+    }
+}
+```
+
+## Important Concepts
+
+### 1. Non-Ordered Push and Pop
+This list is **not a stack**. 
+- `push()` inserts the node into the circular chain relative to the current "root."
+- `pop()` removes the current "root" and advances the list's internal pointer to the next neighbor.
+
+Because the list is circular, there is no absolute "start" or "end"—only the node that the list happens to be pointing at right now. If you need a strict Last-In-First-Out (LIFO) order, a standard stack is a better choice.
+
+### 2. Bare-Metal Safety
+Since this library handles raw pointers (`NonNull<T>`), you must ensure:
+1. **Memory Validity**: The data the pointer points to must remain valid as long as it is in the list. If the data is on the stack, it must not go out of scope.
+2. **Initialization**: You **must** call `IntrusiveDLinkList::init_node(ptr)` before pushing a node for the first time. This ensures the node's pointers are not null and correctly point to itself.
+3. **Pinning**: In many bare-metal scenarios, you should ensure your data does not move in memory once it has been linked, as the pointers inside the other nodes will become "dangling."
+
+### 3. Why `DoublyLinkPointer`?
+The trait acts as a contract. It tells the list exactly how to "stitch" your structs together. By requiring the `linked` boolean, the list can verify that a node isn't already part of another chain, preventing the most common source of memory corruption in intrusive collections.
+
+## License
+
+This project is licensed under the **MIT License**. See the `LICENSE` file for details.
