@@ -61,7 +61,7 @@
 mod dlink_list;
 mod doubly_link_pointer;
 mod ext;
-mod iter;
+mod iterator;
 
 pub use dlink_list::IntrusiveDLinkList;
 pub use doubly_link_pointer::DoublyLinkPointer;

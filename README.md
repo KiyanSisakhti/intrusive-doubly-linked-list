@@ -1,4 +1,21 @@
-# intrusive-doubly-linked-list
+<div align="center">
+<h1>Intrusive Doubly Linked-List</h1>
+</div>
+
+<div align="center">
+
+![Test Status][git-ci]
+![Lines of Code][total-lines]
+![Repo Size][repo-size]
+
+
+[![crate][crate-badge]][crate-link]
+[![MIT licensed][license-image]][license-link]
+[![Docs][docs-image]][docs-link]
+
+</div>
+
+---
 
 A high-performance, **zero-allocation**, circular intrusive doubly linked list for Rust.
 
@@ -18,7 +35,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-intrusive-doubly-list = "0.1.3"
+intrusive-doubly-list = "0.1.4"
 ```
 
 ## Step 1: Implement `DoublyLinkPointer`
@@ -105,3 +122,15 @@ The trait acts as a contract. It tells the list exactly how to "stitch" your str
 ## License
 
 This project is licensed under the **MIT License**. See the `LICENSE` file for details.
+
+
+[crate-badge]: https://img.shields.io/crates/v/intrusive-doubly-list.svg
+[crate-link]: https://crates.io/crates/intrusive-doubly-list
+[docs-image]: https://docs.rs/intrusive-doubly-list/badge.svg
+[docs-link]: https://docs.rs/intrusive-doubly-list
+[license-image]: https://img.shields.io/badge/MIT-blue.svg
+[repo-size]: https://img.shields.io/github/repo-size/KiyanSisakhti/intrusive-doubly-linked-list
+[total-lines]: https://aschey.tech/tokei/github/KiyanSisakhti/intrusive-doubly-linked-list
+[git-ci]:https://github.com/KiyanSisakhti/intrusive-doubly-linked-list/actions/workflows/rust.yml/badge.svg?branch=main
+
+[license-link]: #license

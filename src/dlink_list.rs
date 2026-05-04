@@ -19,7 +19,11 @@
 //! 4. A node's `is_linked` state must accurately reflect whether it is part of a list
 //!    to prevent double-insertion bugs.
 
-use crate::{DoublyLinkPointer, ext::NonNullEx, iter::Iter};
+use crate::{
+    DoublyLinkPointer,
+    ext::NonNullEx,
+    iterator::{iter::Iter, iter_mut::IterMut},
+};
 use core::ptr::NonNull;
 
 pub struct IntrusiveDLinkList<T>
@@ -50,6 +54,14 @@ where
     /// until it has traversed the entire circle.
     pub fn iter(&self) -> Iter<'_, T> {
         Iter::new(self.root_pointer)
+    }
+
+    /// Returns a mutable iterator over the nodes in the list.
+    ///
+    /// The iterator starts at the head of the list and follows the 'next' pointers
+    /// until it has traversed the entire circle.
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut::new(self.root_pointer)
     }
 
     /// Returns the number of nodes currently in the list.
