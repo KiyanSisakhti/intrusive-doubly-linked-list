@@ -112,6 +112,31 @@ where
         true
     }
 
+    /// A raw version of `push` that operates on a `NonNull` pointer to the list.
+    ///
+    /// # Safety
+    /// The caller must ensure that `list_ptr` is valid and that no other mutable
+    /// references to the list exist during this operation. This is useful in
+    /// complex pointer-based structures where using standard Rust borrows
+    /// would trigger aliasing violations.
+    pub fn push_raw(
+        mut list_ptr: NonNull<IntrusiveDLinkList<T>>,
+        mut node_ptr: NonNull<T>,
+    ) -> bool {
+        if Self::is_node_linked(node_ptr) {
+            return false;
+        }
+        if let Some(root) = list_ptr.unsafe_ref().root_pointer {
+            Self::link_to(node_ptr, root);
+        } else {
+            list_ptr.unsafe_mut_ref().root_pointer = Some(node_ptr);
+        }
+
+        list_ptr.unsafe_mut_ref().len += 1;
+        node_ptr.unsafe_mut_ref().set_link_state(true);
+        true
+    }
+
     /// Removes the current root node and advances the list pointer to the next node.
     ///
     /// **Note:** Unlike a stack `pop`, this removes the element currently designated
@@ -136,6 +161,34 @@ where
         Some(root_ptr)
     }
 
+    /// A raw version of `pop` that operates on a `NonNull` pointer to the list.
+    ///
+    /// Removes the root node and returns it, shifting the list's root to the next node.
+    /// This avoids creating a `&mut Self` borrow, which helps in maintaining
+    /// compatibility with raw pointer-based memory models (like Miri's Tree Borrows).
+    /// # Safety
+    /// The caller must ensure that `list_ptr` is valid and that no other mutable
+    /// references to the list exist during this operation. This is useful in
+    /// complex pointer-based structures where using standard Rust borrows
+    /// would trigger aliasing violations.
+    pub fn pop_raw(mut list_ptr: NonNull<IntrusiveDLinkList<T>>) -> Option<NonNull<T>> {
+        let mut root_ptr = list_ptr.unsafe_ref().root_pointer?;
+
+        if Self::is_single(root_ptr) {
+            list_ptr.unsafe_mut_ref().root_pointer = None;
+        } else {
+            let next_ptr = root_ptr.unsafe_ref().get_next()?;
+
+            list_ptr.unsafe_mut_ref().root_pointer = Some(next_ptr);
+
+            Self::unlink(root_ptr);
+        }
+
+        root_ptr.unsafe_mut_ref().set_link_state(false);
+        list_ptr.unsafe_mut_ref().len -= 1;
+        Some(root_ptr)
+    }
+
     /// Removes a specific node from the list.
     ///
     /// This is an O(1) operation. If the node being removed is the current root,
@@ -157,6 +210,39 @@ where
             Self::unlink(node_ptr) && {
                 node_ptr.unsafe_mut_ref().set_link_state(false);
                 self.len -= 1;
+                true
+            }
+        }
+    }
+
+    /// A raw version of `remove` that operates on a `NonNull` pointer to the list.
+    ///
+    /// Unlinks a specific node from the list using raw pointers. This is preferred
+    /// when the node and the list are part of a larger structure where formal
+    /// references are difficult to obtain safely.
+    ///
+    /// # Safety
+    /// The caller must ensure that `list_ptr` is valid and that no other mutable
+    /// references to the list exist during this operation. This is useful in
+    /// complex pointer-based structures where using standard Rust borrows
+    /// would trigger aliasing violations.
+    pub fn remove_raw(
+        mut list_ptr: NonNull<IntrusiveDLinkList<T>>,
+        mut node_ptr: NonNull<T>,
+    ) -> bool {
+        if !Self::is_node_linked(node_ptr) {
+            return false;
+        }
+        let Some(root_ptr) = list_ptr.unsafe_ref().root_pointer else {
+            return false;
+        };
+
+        if root_ptr == node_ptr {
+            Self::pop_raw(list_ptr).is_some()
+        } else {
+            Self::unlink(node_ptr) && {
+                node_ptr.unsafe_mut_ref().set_link_state(false);
+                list_ptr.unsafe_mut_ref().len -= 1;
                 true
             }
         }
@@ -294,7 +380,20 @@ mod tests {
             assert!(list.push(slot), "IntrusiveDLinkList::push failed 0");
         }
 
-        assert!(list.len() == 10, "IntrusiveDLinkList::len failed");
+        let list_ptr = NonNull::from_ref(&list);
+
+        for _ in 0..10 {
+            let mut slot = allocate_slot(slot_layout);
+            IntrusiveDLinkList::init_node(slot);
+            ptrs.push(slot);
+            slot.unsafe_mut_ref().data = TEST_KEY;
+            assert!(
+                IntrusiveDLinkList::push_raw(list_ptr, slot),
+                "IntrusiveDLinkList::push failed 1"
+            );
+        }
+
+        assert!(list.len() == 20, "IntrusiveDLinkList::len failed");
 
         // Test pushing and immediately removing a single element
         let slot_ptr = allocate_slot(slot_layout);

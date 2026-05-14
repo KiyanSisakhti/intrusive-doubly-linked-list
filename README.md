@@ -35,7 +35,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-intrusive-doubly-list = "0.1.4"
+intrusive-doubly-list = "0.1.5"
 ```
 
 ## Step 1: Implement `DoublyLinkPointer`
@@ -99,6 +99,35 @@ fn main() {
         println!("Value: {}", node.value);
     }
 }
+```
+
+## Advanced: Raw Operations and Pointer Aliasing
+
+The library provides `_raw` variants for core operations: `push_raw`, `pop_raw`, and `remove_raw`. These methods take a `NonNull<IntrusiveDLinkList<T>>` instead of a standard Rust `&mut self`.
+
+### Why use Raw Methods?
+
+In low-level systems programming—especially when building **Intrusive Trees**, **Schedulers**, or **Async Executors**—you often face strict ownership challenges.
+
+1. **Bypassing the Borrow Checker**: Standard Rust mutable references (`&mut T`) require exclusive access. If your list is part of a complex structure where nodes and the list container need to be accessed simultaneously via pointers, `&mut self` can be too restrictive.
+2. **Avoiding Aliasing Violations**: Using `_raw` methods helps you stay compliant with Rust’s memory models (like **Stacked Borrows** or **Tree Borrows**). Converting a pointer to a reference and back can sometimes "invalidate" other existing pointers to the same memory. By staying with `NonNull`, you maintain pointer stability.
+3. **Circular Dependencies**: When a node needs to remove itself from a list that it also contains a pointer to, `_raw` methods prevent the creation of conflicting mutable borrows.
+
+### Example: Using `push_raw`
+
+```rust
+use intrusive_doubly_list::IntrusiveDLinkList;
+use core::ptr::NonNull;
+
+// Assume we have a list pointer (e.g., from a global state or tree node)
+let mut list = IntrusiveDLinkList::new();
+let list_ptr = NonNull::from(&mut list);
+
+let mut data = SensorData { /* ... */ };
+let node_ptr = NonNull::from(&mut data);
+
+// Perform operation without creating a &mut reference to the list
+IntrusiveDLinkList::push_raw(list_ptr, node_ptr);
 ```
 
 ## Important Concepts
