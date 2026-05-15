@@ -1,156 +1,253 @@
 <div align="center">
-<h1>Intrusive Doubly Linked-List</h1>
-</div>
+  <h1>Intrusive Doubly Linked List</h1>
+  <p><strong>A high-performance, zero-allocation, circular intrusive doubly linked list for Rust.</strong></p>
 
-<div align="center">
+  [![crate][crate-badge]][crate-link]
+  ![Test Status][git-ci]
+  ![Lines of Code][total-lines]
 
-![Test Status][git-ci]
-![Lines of Code][total-lines]
-![Repo Size][repo-size]
-
-
-[![crate][crate-badge]][crate-link]
-[![MIT licensed][license-image]][license-link]
-[![Docs][docs-image]][docs-link]
-
+  ![Repo Size][repo-size]
+  [![MIT licensed][license-image]][license-link]
+  [![Docs][docs-image]][docs-link]
 </div>
 
 ---
 
-A high-performance, **zero-allocation**, circular intrusive doubly linked list for Rust.
+## 📖 Table of Contents
+- [Introduction](#-introduction)
+- [Why Intrusive?](#-why-intrusive)
+- [Key Features](#-key-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+  - [1. Define Your Node](#1-define-your-node)
+  - [2. Basic Operations](#2-basic-operations)
+- [⚠️ Important: Not a Stack or Queue (LIFO/FIFO)](#️-important-not-a-stack-or-queue-lifofifo)
+- [Advanced: Avoiding Aliasing with Raw API](#-advanced-avoiding-aliasing-with-raw-api)
+- [Safety & Invariants](#-safety--invariants)
+- [Performance](#-performance)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-This crate is designed for **bare-metal (no_std)** environments where you need to manage collections of data without the overhead of a global heap allocator. By using an intrusive design, the "links" (pointers) are stored directly inside your data structures.
+---
 
-## Features
+## 🌟 Introduction
 
-- **Zero Heap Allocation**: No `Box`, `Vec`, or `BTreeMap` required.
-- **Bare-Metal Ready**: Works in `no_std` environments using raw pointers (`NonNull`).
-- **O(1) Operations**: Push, pop, and remove operations are constant time.
-- **Circular Mechanics**: Simplifies rotation and ensures the list never has a "dead end."
-- **Safety Guard**: Includes a `link_state` flag to prevent a node from being corrupted by being added to two lists at once.
+`intrusive-doubly-list` provides a robust, `no_std` compatible, circular intrusive doubly linked list. Unlike standard collections, it allows you to manage memory manually, making it ideal for:
+- **Embedded Systems** (where heap is scarce or non-existent).
+- **Kernel Development** (tracking tasks, memory pages).
+- **Custom Memory Managers** (slab allocators, buddy systems).
+- **High-Performance Schedulers**.
 
-## Installation
+---
+
+## 🤔 Why Intrusive?
+
+In a standard `std::collections::LinkedList<T>`, each insertion requires a heap allocation for a wrapper node:
+```rust
+// Standard: List owns a Node which wraps your Data
+// [List] -> [Node { Data, Next, Last }] -> [Node { Data, Next, Last }]
+```
+
+In an **intrusive** list, the links are stored **inside** your data structure:
+```rust
+// Intrusive: Data *is* the Node
+// [List] -> [Data { Next, Last, ...fields }] -> [Data { Next, Last, ...fields }]
+```
+
+### Advantages:
+1. **Zero Allocation**: No `Box` or `Vec` needed during list operations.
+2. **Locality**: Data and links are stored together, improving cache hits.
+3. **Flexible Ownership**: A single object can be part of a list while being owned by something else (e.g., a static array or a custom pool).
+4. **O(1) Removal**: You can remove a node from the list in constant time if you have a pointer to the node itself, without searching the list.
+
+---
+
+## ✨ Key Features
+
+- **Circular Design**: The list is circular (tail connects back to head), simplifying many edge cases and enabling infinite rotation.
+- **Ownership Validation**: Integrated `link_state` flag prevents common bugs where a node is accidentally added to two lists at once.
+- **Multiple APIs**:
+    - **Safe-ish Wrapper (`IntrusiveDLinkList`)**: Uses standard Rust references for ease of use.
+    - **Raw API (`IntrusiveDLinkListRaw`)**: Operates entirely on `NonNull` pointers, strictly adhering to Miri's memory models (Tree/Stacked Borrows) by avoiding reference aliasing.
+- **Iterator Support**: Safe, lifetime-bounded iterators (`iter()` and `iter_mut()`).
+- **Completely `no_std`**: No standard library or allocator required.
+
+---
+
+## 📦 Installation
 
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-intrusive-doubly-list = "0.1.5"
+intrusive-doubly-list = "0.2.0"
 ```
 
-## Step 1: Implement `DoublyLinkPointer`
+---
 
-To put your data into the list, your struct must "volunteer" fields to store the pointers. This is what makes the list **intrusive**.
+## 🚀 Quick Start
+
+### 1. Define Your Node
+Implement the `DoublyLinkPointer` trait for your struct.
 
 ```rust
-use intrusive-doubly-list::DoublyLinkPointer;
+use intrusive_doubly_list::DoublyLinkPointer;
 use core::ptr::NonNull;
 
-struct SensorData {
+struct Task {
+    name: &'static str,
     // Intrusive links
-    next: Option<NonNull<SensorData>>,
-    last: Option<NonNull<SensorData>>,
+    next: Option<NonNull<Task>>,
+    last: Option<NonNull<Task>>,
     linked: bool,
-    
-    // Your actual data
-    value: f32,
 }
 
-impl DoublyLinkPointer<SensorData> for SensorData {
-    fn get_next(&self) -> Option<NonNull<SensorData>> { self.next }
-    fn get_last(&self) -> Option<NonNull<SensorData>> { self.last }
-    fn set_next(&mut self, next: Option<NonNull<SensorData>>) { self.next = next; }
-    fn set_last(&mut self, last: Option<NonNull<SensorData>>) { self.last = last; }
+impl DoublyLinkPointer<Task> for Task {
+    fn get_next(&self) -> Option<NonNull<Task>> { self.next }
+    fn get_last(&self) -> Option<NonNull<Task>> { self.last }
+    fn set_next(&mut self, next: Option<NonNull<Task>>) { self.next = next; }
+    fn set_last(&mut self, last: Option<NonNull<Task>>) { self.last = last; }
     fn set_link_state(&mut self, state: bool) { self.linked = state; }
     fn is_linked(&self) -> bool { self.linked }
 }
 ```
 
-## Step 2: Basic Usage
-
-In bare-metal environments, nodes often live in fixed buffers or static memory. To use them, you convert a safe mutable reference into a `NonNull<T>` pointer.
-
-```rust
-use intrusive-doubly-list::{IntrusiveDLinkList, DoublyLinkPointer};
-use core::ptr::NonNull;
-
-fn main() {
-    let mut list = IntrusiveDLinkList::new();
-
-    // 1. Create your data (e.g., on the stack)
-    // IMPORTANT: The node must not be moved after being added to the list.
-    let mut sensor_a = SensorData {
-        next: None,
-        last: None,
-        linked: false,
-        value: 22.5,
-    };
-
-    // 2. Convert a safe mutable reference to NonNull.
-    // This creates a pointer the list can use to link the node.
-    let node_ptr = NonNull::from(&mut sensor_a);
-
-    // 3. Initialize and push
-    IntrusiveDLinkList::init_node(node_ptr);
-    list.push(node_ptr);
-
-    // 4. Iterate safely
-    for node in list.iter() {
-        println!("Value: {}", node.value);
-    }
-}
-```
-
-## Advanced: Raw Operations and Pointer Aliasing
-
-The library provides `_raw` variants for core operations: `push_raw`, `pop_raw`, and `remove_raw`. These methods take a `NonNull<IntrusiveDLinkList<T>>` instead of a standard Rust `&mut self`.
-
-### Why use Raw Methods?
-
-In low-level systems programming—especially when building **Intrusive Trees**, **Schedulers**, or **Async Executors**—you often face strict ownership challenges.
-
-1. **Bypassing the Borrow Checker**: Standard Rust mutable references (`&mut T`) require exclusive access. If your list is part of a complex structure where nodes and the list container need to be accessed simultaneously via pointers, `&mut self` can be too restrictive.
-2. **Avoiding Aliasing Violations**: Using `_raw` methods helps you stay compliant with Rust’s memory models (like **Stacked Borrows** or **Tree Borrows**). Converting a pointer to a reference and back can sometimes "invalidate" other existing pointers to the same memory. By staying with `NonNull`, you maintain pointer stability.
-3. **Circular Dependencies**: When a node needs to remove itself from a list that it also contains a pointer to, `_raw` methods prevent the creation of conflicting mutable borrows.
-
-### Example: Using `push_raw`
+### 2. Basic Operations
 
 ```rust
 use intrusive_doubly_list::IntrusiveDLinkList;
 use core::ptr::NonNull;
 
-// Assume we have a list pointer (e.g., from a global state or tree node)
-let mut list = IntrusiveDLinkList::new();
-let list_ptr = NonNull::from(&mut list);
+fn main() {
+    let mut list = IntrusiveDLinkList::new();
 
-let mut data = SensorData { /* ... */ };
-let node_ptr = NonNull::from(&mut data);
+    // Nodes can live on the stack, but they MUST NOT MOVE while linked
+    let mut t1 = Task { name: "Task 1", next: None, last: None, linked: false };
+    let mut t2 = Task { name: "Task 2", next: None, last: None, linked: false };
 
-// Perform operation without creating a &mut reference to the list
-IntrusiveDLinkList::push_raw(list_ptr, node_ptr);
+    let p1 = NonNull::from(&mut t1);
+    let p2 = NonNull::from(&mut t2);
+
+    // Initialize nodes (critical step!)
+    IntrusiveDLinkList::init_node(p1);
+    IntrusiveDLinkList::init_node(p2);
+
+    // Push into the list
+    list.push(p1);
+    list.push(p2);
+
+    println!("List length: {}", list.len());
+
+    // Iterate
+    for task in list.iter() {
+        println!("Running: {}", task.name);
+    }
+
+    // Remove a specific node
+    list.remove(p1);
+
+    // Pop the current root
+    if let Some(node_ptr) = list.pop() {
+        let node = unsafe { node_ptr.as_ref() };
+        println!("Popped: {}", node.name);
+    }
+}
 ```
 
-## Important Concepts
+---
 
-### 1. Non-Ordered Push and Pop
-This list is **not a stack**. 
-- `push()` inserts the node into the circular chain relative to the current "root."
-- `pop()` removes the current "root" and advances the list's internal pointer to the next neighbor.
+## ⚠️ Important: Not a Stack or Queue (LIFO/FIFO)
 
-Because the list is circular, there is no absolute "start" or "end"—only the node that the list happens to be pointing at right now. If you need a strict Last-In-First-Out (LIFO) order, a standard stack is a better choice.
+Unlike `std::collections::VecDeque`, this list is **circular** and does not have a concept of "front" or "back" in the traditional linear sense.
 
-### 2. Bare-Metal Safety
-Since this library handles raw pointers (`NonNull<T>`), you must ensure:
-1. **Memory Validity**: The data the pointer points to must remain valid as long as it is in the list. If the data is on the stack, it must not go out of scope.
-2. **Initialization**: You **must** call `IntrusiveDLinkList::init_node(ptr)` before pushing a node for the first time. This ensures the node's pointers are not null and correctly point to itself.
-3. **Pinning**: In many bare-metal scenarios, you should ensure your data does not move in memory once it has been linked, as the pointers inside the other nodes will become "dangling."
+- **`push()`** inserts the node into the circular chain relative to the current "root."
+- **`pop()`** removes the **current root** and then advances the root pointer to the next node in the circle.
 
-### 3. Why `DoublyLinkPointer`?
-The trait acts as a contract. It tells the list exactly how to "stitch" your structs together. By requiring the `linked` boolean, the list can verify that a node isn't already part of another chain, preventing the most common source of memory corruption in intrusive collections.
+**This is not a LIFO (Stack) or FIFO (Queue).** If you push three elements and then pop three elements, the order of return depends on the internal circular rotation. If you require a specific order, you must manage the root pointer or use a non-circular list implementation.
 
-## License
+---
 
-This project is licensed under the **MIT License**. See the `LICENSE` file for details.
+## 🛡️ Advanced: Avoiding Aliasing with Raw API
+
+Rust's borrow checker is very strict about mutable references (`&mut T`). In complex intrusive structures (like a tree where every node is also in a list), creating a `&mut list` can sometimes invalidate existing pointers to nodes.
+
+To solve this, crates provide `IntrusiveDLinkListRaw` and the `DoublyLinkPointerRaw` trait. These operate entirely on raw pointers, making them safe for use with **Miri** and complex pointer-heavy code.
+
+```rust
+use intrusive_doubly_list::{IntrusiveDLinkListRaw, DoublyLinkPointerRaw};
+use core::ptr::NonNull;
+
+// 1. Implement DoublyLinkPointerRaw (uses raw pointers in methods)
+impl DoublyLinkPointerRaw<Task> for Task {
+    fn get_next(p: NonNull<Self>) -> Option<NonNull<Self>> { unsafe { (*p.as_ptr()).next } }
+    // ... implement other methods using unsafe raw pointer access ...
+    # fn get_last(p: NonNull<Self>) -> Option<NonNull<Self>> { unsafe { (*p.as_ptr()).last } }
+    # fn set_next(p: NonNull<Self>, n: Option<NonNull<Self>>) { unsafe { (*p.as_ptr()).next = n; } }
+    # fn set_last(p: NonNull<Self>, l: Option<NonNull<Self>>) { unsafe { (*p.as_ptr()).last = l; } }
+    # fn set_link_state(p: NonNull<Self>, s: bool) { unsafe { (*p.as_ptr()).linked = s; } }
+    # fn is_linked(p: NonNull<Self>) -> bool { unsafe { (*p.as_ptr()).linked } }
+}
+
+fn main() {
+    let mut list = IntrusiveDLinkListRaw::<Task>::new();
+    let list_ptr = NonNull::from(&mut list);
+
+    let mut t1 = Task { /* ... */ };
+    let p1 = NonNull::from(&mut t1);
+
+    IntrusiveDLinkListRaw::init_node(p1);
+    IntrusiveDLinkListRaw::push(list_ptr, p1);
+    
+    let popped = IntrusiveDLinkListRaw::pop(list_ptr);
+}
+```
+
+---
+
+## ⚠️ Safety & Invariants
+
+Working with intrusive lists requires care. By using this crate, you agree to uphold the following:
+
+1.  **Stability**: Once a node is added to a list, it **must not be moved** in memory (e.g., don't push a stack-allocated node into a `Vec` or return it from a function).
+2.  **Lifetime**: A node must not be dropped/deallocated while it is still a member of a list.
+3.  **Initialization**: Always call `init_node` before the first time you `push` a node.
+4.  **Single Membership**: A node cannot be in two lists at the same time. The `link_state` flag helps catch this, but the trait implementation must correctly manage it.
+
+---
+
+## ⚡ Performance
+
+- **`push`**: $O(1)$
+- **`pop`**: $O(1)$
+- **`remove`**: $O(1)$
+- **`len`**: $O(1)$ (tracked via internal counter)
+- **Memory**: 0 extra bytes allocated on heap. The list structure itself is only 16-24 bytes (on 64-bit).
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Whether it's optimization, documentation, or new features, feel free to open an issue or a PR.
+
+1. Fork the repo.
+2. Create your feature branch.
+3. Ensure all tests pass (including Miri).
+4. Submit a PR.
+
+```bash
+# Run tests
+cargo test
+# Run Miri
+cargo miri test
+```
+
+---
+
+## ⚖️ License
+
+Licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+
 
 
 [crate-badge]: https://img.shields.io/crates/v/intrusive-doubly-list.svg

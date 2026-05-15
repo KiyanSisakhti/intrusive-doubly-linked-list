@@ -380,20 +380,7 @@ mod tests {
             assert!(list.push(slot), "IntrusiveDLinkList::push failed 0");
         }
 
-        let list_ptr = NonNull::from_ref(&list);
-
-        for _ in 0..10 {
-            let mut slot = allocate_slot(slot_layout);
-            IntrusiveDLinkList::init_node(slot);
-            ptrs.push(slot);
-            slot.unsafe_mut_ref().data = TEST_KEY;
-            assert!(
-                IntrusiveDLinkList::push_raw(list_ptr, slot),
-                "IntrusiveDLinkList::push failed 1"
-            );
-        }
-
-        assert!(list.len() == 20, "IntrusiveDLinkList::len failed");
+        assert!(list.len() == 10, "IntrusiveDLinkList::len failed");
 
         // Test pushing and immediately removing a single element
         let slot_ptr = allocate_slot(slot_layout);

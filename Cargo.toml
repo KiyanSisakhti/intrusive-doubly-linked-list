@@ -1,6 +1,6 @@
 [package]
 name = "intrusive-doubly-list"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 description = "An efficient, zero-allocation circular intrusive doubly linked list in Rust. Features safe, lifetime-bounded iterators, unified ownership validation using a link_state flag to prevent node reuse bugs across multiple lists, and idiomatically optimized low-level pointer mechanics without any external heap allocation overhead."
